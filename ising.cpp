@@ -21,7 +21,7 @@ struct site {
 };
 
 // Lattice parameters
-const int size = 25; // length of the square lattice
+const int size = 8; // length of the square lattice
 int total_spins = size * size; // total number of sites on the lattice
 bool lattice[size - 1][size - 1]; // the actual lattice of sites
 
@@ -35,15 +35,17 @@ std::mt19937 gen(rd());
 
 // NOTE: this is necessary because the default rand with a modulo
 // does not produce a uniform distribution of values
-// We create two distributions, one for the probability that a spin will be flipped
-// and the other for picking coordinates on the grid
+// We create three distributions, one for the probability that a spin will be flipped
+// one for picking coordinates on the grid
+// and a third for initializing the spins on the lattice
 std::uniform_real_distribution<> prob_dist(0.0, 1.0);
 std::uniform_int_distribution<> coord_dist(0, size);
+std::uniform_int_distribution<> site_dist(0,1);
 
 // temperature parameters
-float T_init = 10.0; // temperature of the lattice at the beginning
-float dt = .1; // change in the temperature per simulation step
-float T_min = 0.25; // stopping temperature
+float T_init = 5.0; // temperature of the lattice at the beginning
+float dt = .01; // change in the temperature per simulation step
+float T_min = 0.1; // stopping temperature
 
 // Monte Carlo parameters
 int steps = 10000;
@@ -61,11 +63,12 @@ bool init_state () {
 	for (int i = 0; i < size; i++) {
 		for (int j = 0; j < size; j++) {
 			// set the spin to either 0 or 1
-			lattice[i][j] = rand() % 2;
+			lattice[i][j] = site_dist(gen);
 		}
 	}
 	return true;
 }
+
 // function to print the lattice
 void print_state() {
 	for (int i = 0; i < size; i++) {
@@ -103,7 +106,7 @@ site rand_site() {
 // returns the spin value of a certain site
 int get_spin(site s) {
 	// true corresponds to up spin, false to down spin
-	return lattice[s.x][s.y]; 
+	return (lattice[s.x][s.y] ? 1 : -1); 
 }
 
 // given a site, returns the 4 nearest neighbor sites
@@ -162,7 +165,7 @@ int energy(site s) {
 
 // flips the spin at a certain site
 void flip(site s) {
-	lattice[s.x][s.y] = -1 * lattice[s.x][s.y];
+	lattice[s.x][s.y] = not lattice[s.x][s.y];
 }
 
 // function to compute the net total magnetization
@@ -195,7 +198,7 @@ void serialize_lattice() {
 
 	for (int i = 0; i < size; i++) {
 		for (int j = 0; j < size; j++) {
-			int val = lattice[i][j];
+			int val = (lattice[i][j] ? 1 : -1);
 			lat_out << val << ",";	
 		}
 		lat_out << "\n";
