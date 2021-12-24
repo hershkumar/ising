@@ -1,5 +1,6 @@
 // Ising Model Simulation
 // Hersh Kumar
+// December 2021
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,12 +35,15 @@ std::mt19937 gen(rd());
 
 // NOTE: this is necessary because the default rand with a modulo
 // does not produce a uniform distribution of values
+// We create two distributions, one for the probability that a spin will be flipped
+// and the other for picking coordinates on the grid
 std::uniform_real_distribution<> prob_dist(0.0, 1.0);
 std::uniform_int_distribution<> coord_dist(0, size);
+
 // temperature parameters
 float T_init = 10.0; // temperature of the lattice at the beginning
-float dt = .1;
-float T_min = 0.25;
+float dt = .1; // change in the temperature per simulation step
+float T_min = 0.25; // stopping temperature
 
 // Monte Carlo parameters
 int steps = 10000;
@@ -81,10 +85,11 @@ void print_state() {
 // function to get a random index in the lattice
 // since its a square lattice, we can use this for both the x and y indices of the site
 int rand_coord() {
-	return coord_dist(gen); // modulo restricts the random number to 0 - size-1 
+	return coord_dist(gen); 
 }
 
 // returns a random float between 0 and 1
+// Uses the uniform float distribution
 float rand_prob() {
 	return prob_dist(gen);
 }
@@ -98,7 +103,7 @@ site rand_site() {
 // returns the spin value of a certain site
 int get_spin(site s) {
 	// true corresponds to up spin, false to down spin
-	return (lattice[s.x][s.y] ? 1 : -1); 
+	return lattice[s.x][s.y]; 
 }
 
 // given a site, returns the 4 nearest neighbor sites
@@ -157,7 +162,7 @@ int energy(site s) {
 
 // flips the spin at a certain site
 void flip(site s) {
-	lattice[s.x][s.y] = not lattice[s.x][s.y];
+	lattice[s.x][s.y] = -1 * lattice[s.x][s.y];
 }
 
 // function to compute the net total magnetization
@@ -190,7 +195,7 @@ void serialize_lattice() {
 
 	for (int i = 0; i < size; i++) {
 		for (int j = 0; j < size; j++) {
-			int val = (lattice[i][j] ? 1 : -1);
+			int val = lattice[i][j];
 			lat_out << val << ",";	
 		}
 		lat_out << "\n";
@@ -198,6 +203,35 @@ void serialize_lattice() {
 	lat_out << "\n";
 	lat_out.close();
 }
+
+// does the transient MC steps that are unstable
+// Basically the same as the MC steps except we don't measure a change in the observables
+void transient(float T) {
+	for (int a = 1; a <= trans_steps; a++) {
+		for(int b = 1; b < total_spins; b++) {
+			// pick a random site
+			site s = rand_site();
+			// check whether the site should be flipped based on the energy
+			int de = -energy(s);
+
+			bool f = false;
+
+			if (de < 0) {
+				f = true;
+			}
+			else if (rand_prob() < exp(-de / T)) {
+				f = true;
+			}
+			
+			// if it should be flipped
+			if (f) {
+				// flip t he spin
+				flip(s);
+			}
+		}
+	}
+}
+
 // main loop
 int main() {
 	// set up the stream for outputting data
@@ -206,8 +240,9 @@ int main() {
 	// add the data headers to the data file
 	obs_out << "Temperature,Average Energy,Average Magnetization" << std::endl; 
 	// declare vars for computing the observables
-	double E = 0, Esq = 0, E_avg = 0, Esq_avg = 0, e_tot = 0, e_tot_sq = 0;
-	double M = 0, Msq = 0, M_avg = 0, Msq_avg = 0, m_tot = 0, m_tot_sq = 0;
+	double E_avg = 0, e_tot = 0;
+	double M_avg = 0, m_tot = 0;
+
 	// normalization factor for the observables
 	float norm = (1.0/(float) (steps * total_spins));
 
@@ -215,7 +250,7 @@ int main() {
 	init_state();
 	// display the original lattice in the terminal
 	print_state();
-	//write the initial state to the file
+	// write the initial state to the file
 	serialize_lattice();
 	// Now we have the simulation loop	
 	for (float T = T_init; T >= T_min; T -= dt) {
@@ -223,39 +258,15 @@ int main() {
 		m_tot = 0;
 
 		// run the transient steps, which are steps we don't care about initially
-		for (int a = 1; a <= trans_steps; a++) {
-			for(int b = 1; b < total_spins; b++) {
-				// pick a random site
-				site s = rand_site();
-				// check whether the site should be flipped based on the energy
-				int de = -energy(s);
-
-				bool f = false;
-
-				if (de < 0) {
-					f = true;
-				}
-				else if (rand_prob() < exp(-de / T)) {
-					f = true;
-				}
-				
-				// if it should be flipped
-				if (f) {
-					// flip the spin
-					flip(s);
-				}
-			}
-		}
-
-
-
+		transient(T);
+		// Begin the main Monte Carlo steps
 		for (int step = 1; step <= steps; step++) {
+
 			for (int b = 1; b <= total_spins; b++) {
 				// pick a random site
 				site s = rand_site();
 				// check whether the site should be flipped based on the energy
 				int de = -energy(s);
-
 				bool f = false;
 
 				if (de < 0) {
@@ -264,14 +275,12 @@ int main() {
 				else if (rand_prob() < exp(-de/T)) {
 					f = true;
 				}
-				
 				// if it should be flipped
 				if (f) {
 					// flip the spin
 					flip(s);
 				}				
 			}
-
 			e_tot += total_energy();
 			m_tot += total_mag();
 		}
@@ -285,7 +294,7 @@ int main() {
 		// write the lattice to the file
 		serialize_lattice();	
 	}
-	print_state();
+	// close the file object
 	obs_out.close();
 	return 1;
 }
